@@ -1,6 +1,6 @@
 # GeUI
 
-Golang creat GUI from xml and css like style.
+Golang create GUI from xml and css like style.
 
 ## Snapshot
 ![](images/hello.png)
