@@ -22,6 +22,7 @@ type CSStyle struct {
 	FontColor       string
 	TextAlign       Align
 	BackgroundColor string
+	HoverColor      string
 }
 
 var (
@@ -40,6 +41,7 @@ func NewStyle() *CSStyle {
 		LineHeight:      30,
 		TextAlign:       CENTER,
 		BackgroundColor: DefaultBackgroundColor,
+		HoverColor:      DefaultBackgroundColor,
 	}
 }
 
@@ -61,6 +63,10 @@ func parseInlineStyle(node *Node, v string) {
 				s.Next()
 				tok = s.Next()
 				node.Style.FontColor = tok.Value
+			case "hover-color":
+				s.Next()
+				tok = s.Next()
+				node.Style.HoverColor = tok.Value
 			case "font-size":
 				s.Next()
 				tok = s.Next()

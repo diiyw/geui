@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <window name="Hello" height="130" width="300"
-        style="background-color:#ffffff">
+        style="background-color:#ffffff;hover-color:#ffffff">
     <label id="label" height="50"
-           style="background-color:#ffffff;font-color:#666666;font-size:30"
+           style="background-color:#ffffff;hover-color:#ffffff;font-color:#666666;font-size:30"
     >
         Hello GeUI
     </label>
-    <button id="submit" height="50" style="font-size:20">Submit</button>
+    <button id="submit" height="50" style="font-size:20;">Submit</button>
 </window>

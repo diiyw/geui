@@ -4,7 +4,6 @@ import (
 	"github.com/fogleman/gg"
 	"github.com/golang/freetype/truetype"
 	"image"
-	"image/draw"
 	"io/ioutil"
 	"log"
 	"runtime"
@@ -124,12 +123,13 @@ func initGLFW(o *windowOptions) (*glfw.Window, error) {
 }
 
 type Window struct {
-	ctx         *glfw.Window
-	events      chan Event
-	canvas      *gg.Context
-	node        *Node
-	newSize     chan image.Rectangle
-	loadedFonts map[string]*truetype.Font
+	ctx            *glfw.Window
+	events         chan Event
+	canvas         *gg.Context
+	node           *Node
+	newSize        chan image.Rectangle
+	loadedFonts    map[string]*truetype.Font
+	mouseX, mouseY float64
 }
 
 var buttons = map[glfw.MouseButton]Mouse{
@@ -165,7 +165,7 @@ func (w *Window) initEvent() {
 	var mx, my float64
 
 	w.ctx.SetCursorPosCallback(func(_ *glfw.Window, x, y float64) {
-		mx, my = x, y
+		w.mouseX, w.mouseY = x, y
 		go func() {
 			w.events <- MouseMove{
 				X: mx,
@@ -248,8 +248,7 @@ func (w *Window) initEvent() {
 func (w *Window) Show() {
 	w.ctx.MakeContextCurrent()
 	_ = gl.Init()
-	w.flush(w.canvas.Image().Bounds())
-
+	w.flush()
 	var box image.Rectangle
 	for !w.ctx.ShouldClose() {
 		select {
@@ -259,7 +258,7 @@ func (w *Window) Show() {
 			w.canvas.DrawImage(old, 0, 0)
 			box = box.Union(r)
 		case <-w.events:
-			w.flush(box)
+			w.flush()
 		default:
 			glfw.PollEvents()
 			w.ctx.SwapBuffers()
@@ -268,17 +267,14 @@ func (w *Window) Show() {
 	}
 }
 
-func (w *Window) flush(r image.Rectangle) {
+func (w *Window) flush() {
 	w.render()
-	bounds := w.canvas.Image().Bounds()
-	r = r.Intersect(bounds)
-	if r.Empty() {
-		return
-	}
 
-	tmp := image.NewRGBA(r)
-	draw.Draw(tmp, r, w.canvas.Image(), r.Min, draw.Src)
-
+	img := w.canvas.Image().(*image.RGBA)
+	bounds := img.Bounds()
+	defer func() {
+		img = nil
+	}()
 	gl.DrawBuffer(gl.FRONT)
 	gl.Viewport(
 		int32(bounds.Min.X),
@@ -287,16 +283,16 @@ func (w *Window) flush(r image.Rectangle) {
 		int32(bounds.Dy()),
 	)
 	gl.RasterPos2d(
-		-1+2*float64(r.Min.X)/float64(bounds.Dx()),
-		+1-2*float64(r.Min.Y)/float64(bounds.Dy()),
+		-1+2*float64(bounds.Min.X)/float64(bounds.Dx()),
+		+1-2*float64(bounds.Min.Y)/float64(bounds.Dy()),
 	)
 	gl.PixelZoom(1, -1)
 	gl.DrawPixels(
-		int32(r.Dx()),
-		int32(r.Dy()),
+		int32(bounds.Dx()),
+		int32(bounds.Dy()),
 		gl.RGBA,
 		gl.UNSIGNED_BYTE,
-		unsafe.Pointer(&tmp.Pix[0]),
+		unsafe.Pointer(&img.Pix[0]),
 	)
 	gl.Flush()
 }
@@ -308,7 +304,11 @@ func (w *Window) render() {
 			switch n.Type {
 			case ElementNode:
 				w.canvas.DrawRectangle(n.Model.RelativeX, n.Model.RelativeY, n.Model.Width, n.Model.Height)
-				w.canvas.SetHexColor(n.Style.BackgroundColor)
+				if n.Focused(w.mouseX, w.mouseY) {
+					w.canvas.SetHexColor(n.Style.HoverColor)
+				} else {
+					w.canvas.SetHexColor(n.Style.BackgroundColor)
+				}
 				w.canvas.Fill()
 			case CharDataNode:
 				f, ok := w.loadedFonts[n.Parent.Style.FontFamily]
