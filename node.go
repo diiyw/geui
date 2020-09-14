@@ -31,8 +31,9 @@ type Node struct {
 	PrevSibling, NextSibling *Node
 	FirstChild, LastChild    *Node
 
-	Type NodeType
-	Data string
+	Type  NodeType
+	Data  string
+	Value []rune
 
 	Style *CSStyle
 
@@ -74,6 +75,7 @@ func AddSibling(sibling, n *Node) {
 
 func (n *Node) GetNodes() (nodes []*Node) {
 	nodes = make([]*Node, 0)
+	nodes = append(nodes, n)
 	var f func(*Node)
 	f = func(n *Node) {
 		if n != nil {
@@ -85,4 +87,20 @@ func (n *Node) GetNodes() (nodes []*Node) {
 	}
 	f(n)
 	return
+}
+
+func (n *Node) GetActiveNode(x, y float64) *Node {
+	var f func(*Node) *Node
+	f = func(n *Node) *Node {
+		if n != nil {
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				if c.Focused(x, y) {
+					return c
+				}
+				f(c)
+			}
+		}
+		return nil
+	}
+	return f(n)
 }

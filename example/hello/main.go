@@ -10,6 +10,7 @@ func main() {
 		node,
 		geui.Title(node.Name),
 		geui.Size(node.Model.Width, node.Model.Height),
+		geui.Resizable(),
 	)
 	if err != nil {
 		panic(err)

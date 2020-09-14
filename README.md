@@ -15,3 +15,6 @@ Anything work in process.
 [ ] Layout
 
 [ ] Entries style
+
+[ ] Widgets
+

@@ -79,6 +79,7 @@ func NewWindow(n *Node, options ...WindowOption) (*Window, error) {
 	w := &Window{
 		events:      make(chan Event, 16),
 		node:        n,
+		newSize:     make(chan image.Rectangle),
 		loadedFonts: make(map[string]*truetype.Font),
 	}
 
@@ -130,35 +131,7 @@ type Window struct {
 	newSize        chan image.Rectangle
 	loadedFonts    map[string]*truetype.Font
 	mouseX, mouseY float64
-}
-
-var buttons = map[glfw.MouseButton]Mouse{
-	glfw.MouseButtonLeft:   MouseLeft,
-	glfw.MouseButtonRight:  MouseRight,
-	glfw.MouseButtonMiddle: MouseMiddle,
-}
-
-var keys = map[glfw.Key]Key{
-	glfw.KeyLeft:         KeyLeft,
-	glfw.KeyRight:        KeyRight,
-	glfw.KeyUp:           KeyUp,
-	glfw.KeyDown:         KeyDown,
-	glfw.KeyEscape:       KeyEscape,
-	glfw.KeySpace:        KeySpace,
-	glfw.KeyBackspace:    KeyBackspace,
-	glfw.KeyDelete:       KeyDelete,
-	glfw.KeyEnter:        KeyEnter,
-	glfw.KeyTab:          KeyTab,
-	glfw.KeyHome:         KeyHome,
-	glfw.KeyEnd:          KeyEnd,
-	glfw.KeyPageUp:       KeyPageUp,
-	glfw.KeyPageDown:     KeyPageDown,
-	glfw.KeyLeftShift:    KeyShift,
-	glfw.KeyRightShift:   KeyShift,
-	glfw.KeyLeftControl:  KeyCtrl,
-	glfw.KeyRightControl: KeyCtrl,
-	glfw.KeyLeftAlt:      KeyAlt,
-	glfw.KeyRightAlt:     KeyAlt,
+	active         *Node
 }
 
 func (w *Window) initEvent() {
@@ -175,25 +148,23 @@ func (w *Window) initEvent() {
 	})
 
 	w.ctx.SetMouseButtonCallback(func(_ *glfw.Window, button glfw.MouseButton, action glfw.Action, mod glfw.ModifierKey) {
-		btn, ok := buttons[button]
-		if !ok {
-			return
-		}
 		switch action {
 		case glfw.Press:
 			go func() {
 				w.events <- MouseDown{
-					X:     mx,
-					Y:     my,
-					Mouse: btn,
+					X:           mx,
+					Y:           my,
+					MouseButton: button,
 				}
 			}()
 		case glfw.Release:
+			// set active node
+			w.active = w.node.GetActiveNode(w.mouseX, w.mouseY)
 			go func() {
 				w.events <- MouseUp{
-					X:     mx,
-					Y:     my,
-					Mouse: btn,
+					X:           mx,
+					Y:           my,
+					MouseButton: button,
 				}
 			}()
 		}
@@ -209,6 +180,9 @@ func (w *Window) initEvent() {
 	})
 
 	w.ctx.SetCharCallback(func(_ *glfw.Window, r rune) {
+		if w.active != nil {
+			w.active.Value = append(w.active.Value, r)
+		}
 		go func() {
 			w.events <- KbType{
 				r,
@@ -217,31 +191,29 @@ func (w *Window) initEvent() {
 	})
 
 	w.ctx.SetKeyCallback(func(_ *glfw.Window, key glfw.Key, _ int, action glfw.Action, _ glfw.ModifierKey) {
-		k, ok := keys[key]
-		if !ok {
-			return
-		}
 		switch action {
 		case glfw.Press:
-			go func() { w.events <- KbDown{k} }()
+			go func() { w.events <- KbDown{key} }()
 		case glfw.Release:
-			go func() { w.events <- KbUp{k} }()
+			if w.active != nil && key == glfw.KeyBackspace {
+				if len(w.active.Value) != 0 {
+					w.active.Value = w.active.Value[:len(w.active.Value)-1]
+				}
+			}
+			go func() { w.events <- KbUp{key} }()
 		case glfw.Repeat:
-			go func() { w.events <- KbRepeat{k} }()
+			go func() { w.events <- KbRepeat{key} }()
 		}
 	})
 
 	w.ctx.SetFramebufferSizeCallback(func(_ *glfw.Window, width, height int) {
 		go func() {
+			w.newSize <- image.Rect(0, 0, width, height)
 			w.events <- Resize{
 				0, 0,
 				float64(width), float64(height),
 			}
 		}()
-	})
-
-	w.ctx.SetCloseCallback(func(_ *glfw.Window) {
-		go func() { w.events <- WindowClose{} }()
 	})
 }
 
@@ -298,37 +270,69 @@ func (w *Window) flush() {
 }
 
 func (w *Window) render() {
+	var setFontFace = func(n *Node) {
+		f, ok := w.loadedFonts[n.Parent.Style.FontFamily]
+		if !ok {
+			fontBytes, err := ioutil.ReadFile(n.Parent.Style.FontFamily)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			f, err = truetype.Parse(fontBytes)
+			if err != nil {
+				log.Println(err)
+				return
+			}
+			w.loadedFonts[n.Parent.Style.FontFamily] = f
+		}
+		face := truetype.NewFace(f, &truetype.Options{
+			Size: n.Parent.Style.FontSize,
+		})
+		w.canvas.SetFontFace(face)
+	}
 	var f func(*Node)
 	f = func(n *Node) {
 		if n != nil {
 			switch n.Type {
 			case ElementNode:
-				w.canvas.DrawRectangle(n.Model.RelativeX, n.Model.RelativeY, n.Model.Width, n.Model.Height)
-				if n.Focused(w.mouseX, w.mouseY) {
-					w.canvas.SetHexColor(n.Style.HoverColor)
-				} else {
-					w.canvas.SetHexColor(n.Style.BackgroundColor)
+				switch n.Data {
+				case "input":
+					w.canvas.SetHexColor(n.Style.BorderColor)
+					w.canvas.SetLineWidth(n.Style.BorderWidth)
+					x, y := n.Model.RelativeX+0.5, n.Model.RelativeY+0.5
+					nw, nh := n.Model.Width, n.Model.Height
+					w.canvas.DrawLine(x, y, x+nw, y)
+					w.canvas.DrawLine(x, y, x, y+nh)
+					w.canvas.DrawLine(x+nw, y, x+nw, y+nh)
+					w.canvas.DrawLine(x, y+nh, x+nw, y+nh)
+					fw, _ := w.canvas.MeasureString(string(n.Value))
+					fw /= 2
+					afw := fw / float64(len(n.Value))
+					v := n.Value
+					if fw > nw {
+						v = n.Value[len(n.Value)-int(nw/afw)-1:]
+						fw = nw - 5
+					}
+					if n.Focused(w.mouseX, w.mouseY) {
+						w.canvas.DrawLine(fw+x+5, y+5, fw+x+5, nh+y-5)
+					}
+					w.canvas.Stroke()
+					setFontFace(n)
+					w.canvas.SetHexColor(n.Style.FontColor)
+					if len(n.Value) != 0 {
+						w.canvas.DrawStringAnchored(string(v), n.Model.RelativeX+6, n.Model.RelativeY+nh/2, 0, 0.4)
+					}
+				default:
+					w.canvas.DrawRectangle(n.Model.RelativeX, n.Model.RelativeY, n.Model.Width, n.Model.Height)
+					if n.Focused(w.mouseX, w.mouseY) {
+						w.canvas.SetHexColor(n.Style.HoverColor)
+					} else {
+						w.canvas.SetHexColor(n.Style.BackgroundColor)
+					}
+					w.canvas.Fill()
 				}
-				w.canvas.Fill()
 			case CharDataNode:
-				f, ok := w.loadedFonts[n.Parent.Style.FontFamily]
-				if !ok {
-					fontBytes, err := ioutil.ReadFile(n.Parent.Style.FontFamily)
-					if err != nil {
-						log.Println(err)
-						return
-					}
-					f, err = truetype.Parse(fontBytes)
-					if err != nil {
-						log.Println(err)
-						return
-					}
-					w.loadedFonts[n.Parent.Style.FontFamily] = f
-				}
-				face := truetype.NewFace(f, &truetype.Options{
-					Size: n.Parent.Style.FontSize,
-				})
-				w.canvas.SetFontFace(face)
+				setFontFace(n)
 				w.canvas.SetHexColor(n.Parent.Style.FontColor)
 				width, height := n.Parent.Model.Width, n.Parent.Model.Height
 				w.canvas.DrawStringAnchored(n.Data, n.Parent.Model.RelativeX+width/2, n.Parent.Model.RelativeY+height/2, 0.5, 0.5)

@@ -23,25 +23,30 @@ type CSStyle struct {
 	TextAlign       Align
 	BackgroundColor string
 	HoverColor      string
+	BorderColor     string
+	BorderWidth     float64
 }
 
 var (
-	DefaultFontSize        float64 = 12
-	DefaultFontColor               = "#E6E6E6"
+	DefaultFontSize        float64 = 14
+	DefaultFontColor               = "#666666"
 	DefaultBackgroundColor         = "#4B4B4B"
+	DefaultBorderColor             = "#666666"
 )
 
 func NewStyle() *CSStyle {
 	return &CSStyle{
 		FontColor:       DefaultFontColor,
 		FontSize:        DefaultFontSize,
-		Height:          30,
+		Height:          35,
 		Width:           0,
 		FontFamily:      DefaultFont,
 		LineHeight:      30,
 		TextAlign:       CENTER,
 		BackgroundColor: DefaultBackgroundColor,
 		HoverColor:      DefaultBackgroundColor,
+		BorderColor:     DefaultBorderColor,
+		BorderWidth:     1,
 	}
 }
 
@@ -71,6 +76,14 @@ func parseInlineStyle(node *Node, v string) {
 				s.Next()
 				tok = s.Next()
 				node.Style.FontSize, _ = strconv.ParseFloat(tok.Value, 32)
+			case "border-width":
+				s.Next()
+				tok = s.Next()
+				node.Style.BorderWidth, _ = strconv.ParseFloat(tok.Value, 32)
+			case "border-color":
+				s.Next()
+				tok = s.Next()
+				node.Style.BorderColor = tok.Value
 			}
 		}
 	}

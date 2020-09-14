@@ -149,6 +149,8 @@ func parseAttr(node *Node, key, val string) {
 		node.Model.Width, _ = strconv.ParseFloat(val, 64)
 	case "height":
 		node.Model.Height, _ = strconv.ParseFloat(val, 64)
+	case "value":
+		node.Value = []rune(val)
 	case "style":
 		parseInlineStyle(node, val)
 	}
